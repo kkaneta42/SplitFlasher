@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": true,
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": ["node"],
+    "noEmit": false,
+    "target": "ES2021"
+  },
+  "include": ["src/main.ts", "src/preload.ts", "src/common/ipc.ts"],
+  "exclude": ["src/renderer"]
+}
