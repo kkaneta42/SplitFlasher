@@ -11,7 +11,7 @@
     "build": "npm run build:main && vite build",
     "build:main": "tsc -p tsconfig.node.json",
     "lint": "tsc --noEmit",
-    "dist:mac": "npm run build && electron-builder --mac --arm64 --x64"
+    "dist:mac": "npm run build && electron-builder --mac --arm64 --x64 --publish=never"
   },
   "keywords": [
     "electron",
@@ -45,7 +45,6 @@
     "appId": "dev.splitflasher.app",
     "productName": "SplitFlasher",
     "asar": true,
-    "publish": "never",
     "directories": {
       "output": "release",
       "buildResources": "build"
