@@ -64,6 +64,19 @@ type IgnoredEntry = { slot: Slot; expiresAt: number; timeout: NodeJS.Timeout };
 const ignoredDeviceIds = new Map<string, IgnoredEntry>();
 const ignoredVolumePaths = new Map<string, IgnoredEntry>();
 
+const resolveAppIcon = (): string | undefined => {
+  // 優先: ビルド済み icns（開発・本番共用）
+  const candidates = [
+    path.join(process.cwd(), 'build', 'icon.icns'),
+    path.join(__dirname, '..', 'build', 'icon.icns'),
+    path.join(process.cwd(), 'docs', 'icon.png') // dev用フォールバック
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return undefined;
+};
+
 const clearIgnoredMap = (map: Map<string, IgnoredEntry>): void => {
   for (const info of map.values()) {
     clearTimeout(info.timeout);
@@ -180,16 +193,23 @@ const scanExistingVolumes = async (): Promise<void> => {
 };
 
 const createWindow = async (): Promise<void> => {
+  const iconPath = resolveAppIcon();
+
   mainWindow = new BrowserWindow({
     width: 760,
     minWidth: 720,
     height: 720,
     backgroundColor: '#14161a',
+    icon: iconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       sandbox: false
     }
   });
+
+  if (process.platform === 'darwin' && iconPath && app.dock) {
+    app.dock.setIcon(iconPath);
+  }
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   if (devServerUrl) {
