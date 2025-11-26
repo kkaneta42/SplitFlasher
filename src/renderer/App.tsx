@@ -53,7 +53,6 @@ function App(): JSX.Element {
       cleanupSubscriptions();
 
       const unsubReady = api.onFirmwareReady((payload: FirmwareReadyPayload) => {
-        setFirmwareInfo(payload.files);
         setSlots((prev) => ({
           right: {
             ...prev.right,
@@ -123,7 +122,6 @@ function App(): JSX.Element {
         .getLogs()
         .then(({ entries, filePath }) => {
           setLogs(entries);
-          setLogFilePath(filePath);
         })
         .catch(() => {
           setLogs([]);
@@ -201,7 +199,7 @@ function App(): JSX.Element {
       }
 
       const file = files[0];
-      const filePath = file.path;
+      const filePath = 'path' in file ? (file as unknown as { path?: string }).path : undefined;
 
       if (!file && !filePath) {
         setError('ファイルをドロップできませんでした。');
