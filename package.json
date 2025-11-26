@@ -1,6 +1,6 @@
 {
   "name": "splitflasher",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "description": "Split keyboard firmware flasher for dual UF2 devices",
   "main": "dist/main.js",
   "scripts": {
