@@ -38,7 +38,9 @@ npm run build
 - 生成物は `dist/` 配下（メイン/プリロード/レンダラー）。
 
 ## 配布（GitHub Actions）
-- タグ `v*` を push すると `.github/workflows/release.yml` が動き、`dist/` を ZIP 化して GitHub Release に添付します。
+- タグ `v*` を push すると `.github/workflows/release.yml` が動き、以下を GitHub Release に添付します。
+  - ビルド成果物 `dist/` をまとめた ZIP
+  - macOS 用パッケージ（署名なし）: `SplitFlasher-<version>-<arch>.dmg` と `zip`
 - 手動実行したい場合は Actions から `workflow_dispatch` を選択。
 
 ## 開発メモ

@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build-and-release:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,6 +28,9 @@ jobs:
       - name: Build app
         run: npm run build
 
+      - name: Package mac app
+        run: npm run dist:mac
+
       - name: Zip dist
         run: |
           cd dist
@@ -36,6 +39,9 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: splitflasher-${{ github.ref_name }}.zip
+          files: |
+            splitflasher-${{ github.ref_name }}.zip
+            release/*.dmg
+            release/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
