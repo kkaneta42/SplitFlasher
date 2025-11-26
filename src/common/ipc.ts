@@ -20,6 +20,19 @@ export type FirmwareIngestRequest =
 
 export type StatusLevel = 'info' | 'warning' | 'error' | 'success';
 
+export type LogLevel = 'info' | 'warn' | 'error';
+
+export interface LogEntry {
+  timestamp: number;
+  level: LogLevel;
+  message: string;
+}
+
+export interface LogInitPayload {
+  entries: LogEntry[];
+  filePath: string;
+}
+
 export interface StatusMessagePayload {
   level: StatusLevel;
   message: string;
@@ -51,7 +64,9 @@ export const IPCChannels = {
   Status: 'flasher:status',
   Progress: 'copy:progress',
   Result: 'copy:result',
-  Error: 'flasher:error'
+  Error: 'flasher:error',
+  LogEntry: 'log:entry',
+  GetLogs: 'log:get'
 } as const;
 
 export type IpcChannel = (typeof IPCChannels)[keyof typeof IPCChannels];

@@ -4,3 +4,4 @@ dist/
 .serena/
 firmware.zip
 firmware/
+*.tsbuildinfo

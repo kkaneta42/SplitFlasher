@@ -16,6 +16,8 @@ import {
   FirmwareIngestRequest,
   HistoryEntry,
   IPCChannels,
+  LogEntry,
+  LogLevel,
   Slot,
   SlotStatus,
   StatusLevel
@@ -24,7 +26,9 @@ import {
 const execFileAsync = promisify(execFile);
 
 const VOLUMES_ROOT = '/Volumes';
-const TARGET_VOLUME_NAME = 'NO NAME';
+// macOS で UF2 ブートローダーがマウントするラベルを許可リストで判定。
+// 例: 標準は "NO NAME"、BLE Micro Pro は "BLEMICROPRO"。
+const TARGET_VOLUME_NAMES = new Set(['NO NAME', 'BLEMICROPRO']);
 const SLOT_LABEL_MAP: Record<Slot, string> = {
   right: '右側',
   left: '左側'
@@ -33,6 +37,8 @@ const SLOT_LABEL_MAP: Record<Slot, string> = {
 const REMOUNT_IGNORE_DURATION_MS = 10000;
 const COPY_MAX_ATTEMPTS = 3;
 const COPY_RETRY_DELAY_MS = 400;
+
+const LOG_BUFFER_MAX = 200;
 
 const RETRYABLE_COPY_ERROR_CODES = new Set(['EACCES', 'EBUSY', 'EPERM', 'EIO']);
 
@@ -48,10 +54,12 @@ let firmwareState: FirmwareState | null = null;
 let activeCopy: { slot: Slot; volumePath: string } | null = null;
 let slotQueue: Slot[] = [];
 let history: HistoryEntry[] = [];
+let logFilePath: string | null = null;
 const pendingVolumePaths: string[] = [];
 const knownVolumes = new Set<string>();
 let volumeWatcher: FSWatcher | null = null;
 const volumeDeviceIds = new Map<string, string | null>();
+const logBuffer: LogEntry[] = [];
 type IgnoredEntry = { slot: Slot; expiresAt: number; timeout: NodeJS.Timeout };
 const ignoredDeviceIds = new Map<string, IgnoredEntry>();
 const ignoredVolumePaths = new Map<string, IgnoredEntry>();
@@ -79,6 +87,28 @@ const isRetryableCopyError = (error: unknown): boolean => {
     return false;
   }
   return !!error.code && RETRYABLE_COPY_ERROR_CODES.has(error.code);
+};
+
+const appendLog = async (entry: LogEntry): Promise<void> => {
+  logBuffer.push(entry);
+  if (logBuffer.length > LOG_BUFFER_MAX) {
+    logBuffer.shift();
+  }
+
+  if (logFilePath) {
+    const line = `[${new Date(entry.timestamp).toISOString()}] [${entry.level.toUpperCase()}] ${entry.message}\n`;
+    await fsPromises.appendFile(logFilePath, line).catch((error) => {
+      console.warn('[log] ファイル書き込みに失敗:', error);
+    });
+  }
+
+  if (mainWindow) {
+    mainWindow.webContents.send(IPCChannels.LogEntry, entry);
+  }
+};
+
+const log = (level: LogLevel, message: string): void => {
+  void appendLog({ level, message, timestamp: Date.now() });
 };
 
 const getCopyErrorMessage = (error: unknown, slot: Slot, volumePath: string): string => {
@@ -151,7 +181,8 @@ const scanExistingVolumes = async (): Promise<void> => {
 
 const createWindow = async (): Promise<void> => {
   mainWindow = new BrowserWindow({
-    width: 840,
+    width: 760,
+    minWidth: 720,
     height: 720,
     backgroundColor: '#14161a',
     webPreferences: {
@@ -175,11 +206,14 @@ const createWindow = async (): Promise<void> => {
 };
 
 const isTargetVolume = (volumePath: string): boolean => {
-  return path.basename(volumePath) === TARGET_VOLUME_NAME && path.dirname(volumePath) === VOLUMES_ROOT;
+  return TARGET_VOLUME_NAMES.has(path.basename(volumePath)) && path.dirname(volumePath) === VOLUMES_ROOT;
 };
+
+const getVolumeLabel = (volumePath: string): string => path.basename(volumePath);
 
 const sendStatus = (level: StatusLevel, message: string, slot?: Slot, nextStatus?: SlotStatus): void => {
   mainWindow?.webContents.send(IPCChannels.Status, { level, message, slot, nextStatus });
+  log(level === 'error' ? 'error' : level === 'warning' ? 'warn' : 'info', message);
 };
 
 const sendError = (message: string, slot?: Slot): void => {
@@ -188,6 +222,7 @@ const sendError = (message: string, slot?: Slot): void => {
     message,
     slot
   });
+  log('error', message);
 };
 
 const sendFirmwareReady = (payload: FirmwareReadyPayload): void => {
@@ -206,6 +241,7 @@ const sendProgress = (slot: Slot, bytesWritten: number, totalBytes: number, volu
 const sendResult = (result: CopyResultPayload): void => {
   history = [result, ...history];
   mainWindow?.webContents.send(IPCChannels.Result, result);
+  log(result.success ? 'info' : 'error', result.message ?? `${getSlotLabel(result.slot)} の結果を記録しました。`);
 };
 
 const getDeviceIdentifier = async (volumePath: string): Promise<string | null> => {
@@ -225,6 +261,8 @@ const processVolumeAdded = async (volumePath: string): Promise<void> => {
   if (!isTargetVolume(volumePath)) {
     return;
   }
+
+  log('info', `デバイス検出: ${volumePath}`);
 
   let deviceId = volumeDeviceIds.get(volumePath) ?? null;
   if (!deviceId) {
@@ -291,6 +329,7 @@ const ensureVolumeWatcher = async (): Promise<void> => {
   });
 
   await scanExistingVolumes();
+  log('info', 'ボリューム監視を開始しました。');
 };
 
 const handleVolumeRemoved = (volumePath: string): void => {
@@ -480,7 +519,7 @@ const copyFirmwareToVolume = async (slot: Slot, volumePath: string): Promise<voi
   }
 
   activeCopy = { slot, volumePath };
-  sendStatus('info', `${TARGET_VOLUME_NAME} (${getSlotLabel(slot)}) にコピーを開始します。`, slot, 'copying');
+  sendStatus('info', `${getVolumeLabel(volumePath)} (${getSlotLabel(slot)}) にコピーを開始します。`, slot, 'copying');
 
   const destination = path.join(volumePath, firmwareFile.fileName);
   const totalBytes = firmwareFile.size;
@@ -595,6 +634,7 @@ const handleIngestFirmware = async (
 ): Promise<void> => {
   let tempZipPath: string | null = null;
   try {
+    log('info', 'ファームウェアの取り込みを開始');
     let resolvedZipPath: string;
 
     if (typeof request === 'string' || (typeof request === 'object' && 'path' in request && request.kind === 'path')) {
@@ -660,14 +700,21 @@ const handleReset = async (): Promise<void> => {
   activeCopy = null;
   await cleanupFirmwareState();
   sendStatus('info', '状態をリセットしました。再度zipをドロップしてください。');
+  log('info', '状態をリセット');
 };
 
 const registerHandlers = (): void => {
   ipcMain.handle(IPCChannels.IngestFirmware, handleIngestFirmware);
   ipcMain.handle(IPCChannels.Reset, handleReset);
+  ipcMain.handle(IPCChannels.GetLogs, () => ({ entries: logBuffer, filePath: logFilePath ?? '' }));
 };
 
 app.whenReady().then(async () => {
+  const userDataDir = app.getPath('userData');
+  await fsPromises.mkdir(userDataDir, { recursive: true }).catch(() => {});
+  logFilePath = path.join(userDataDir, 'splitflasher.log');
+  log('info', `ログファイル: ${logFilePath}`);
+
   registerHandlers();
   await ensureVolumeWatcher();
   await createWindow();
