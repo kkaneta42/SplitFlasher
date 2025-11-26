@@ -64,7 +64,8 @@
       ],
       "category": "public.app-category.utilities",
       "artifactName": "${productName}-${version}-${arch}.${ext}",
-      "identity": null
+      "identity": null,
+      "icon": "build/icon.icns"
     }
   }
 }
